@@ -10,6 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@kya-os/checkpoint-nextjs": "^1.7.1",
     "@netlify/blobs": "^10.7.9",
     "blobshape": "^1.0.0",
     "bright": "^1.0.0",
