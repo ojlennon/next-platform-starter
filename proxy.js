@@ -1,35 +1,32 @@
 import { NextResponse } from 'next/server';
-import { withCheckpoint } from '@kya-os/checkpoint-nextjs';
+import { withCheckpointApi } from '@kya-os/checkpoint-nextjs/api-middleware';
 
 /**
  * Checkpoint middleware enforcement, merged with this app's existing
  * request-handling logic (previously in `middleware.js`).
  *
- * Uses the Next.js 16 `proxy` file convention, which runs on the Node.js
- * runtime — the correct home for `withCheckpoint`, whose default package
- * export is the Node build of the in-process WASM engine (no Edge runtime).
+ * Netlify packages Next.js proxy code as an Edge Function. Use Checkpoint's
+ * SaaS gateway integration here so the generated bundle does not include the
+ * Node-only local WASM engine (which loads its binary through `fs`).
  *
  * Configuration comes from environment variables — see `.env.local` /
- * `.env.example`. `tenantHost` is required; `apiKey` is optional and enables
- * detections to report to the Checkpoint dashboard.
+ * `.env.example`. `apiKey` is required by the gateway.
  */
-const checkpoint = withCheckpoint({
-  // Required. TODO: set CHECKPOINT_TENANT_HOST to your dashboard/tenant hostname.
-  tenantHost: process.env.CHECKPOINT_TENANT_HOST ?? 'your.tenant.example',
-  // Optional — enables dashboard reporting.
+const checkpoint = withCheckpointApi({
+  // Required. Set CHECKPOINT_API_KEY in Netlify with the Functions scope.
   apiKey: process.env.CHECKPOINT_API_KEY,
-  // Optional — enables in-process enforcement of your composed Cedar policy.
-  // projectId: process.env.CHECKPOINT_PROJECT_ID,
+  // Use Checkpoint's lower-latency edge detection gateway.
+  useEdge: true,
 });
 
 /**
- * Copy Checkpoint's verdict headers (`X-Checkpoint-*`) and its verdict cookie
- * from a pass-through response onto a new terminal response (e.g. a redirect),
- * so the engine's contract is preserved no matter which branch we return from.
+ * Copy Checkpoint's response metadata and cookies from a pass-through response
+ * onto a new terminal response (e.g. a redirect).
  */
 function carryCheckpointVerdict(from, to) {
   from.headers.forEach((value, key) => {
-    if (key.toLowerCase().startsWith('x-checkpoint')) {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey.startsWith('x-checkpoint') || normalizedKey.startsWith('kya-')) {
       to.headers.set(key, value);
     }
   });
@@ -52,7 +49,7 @@ export async function proxy(request, event) {
   }
 
   // 3. Permit: layer this app's existing behavior on top of the pass-through
-  //    response, preserving the Checkpoint verdict headers + cookie it set.
+  //    response, preserving any Checkpoint metadata it set.
   const response = checkpointResponse;
   const pathname = request.nextUrl.pathname;
 
